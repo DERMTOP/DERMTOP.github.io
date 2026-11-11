@@ -1,13 +1,12 @@
 /* 独木导航 Service Worker —— 解决 GitHub Pages 仅 10 分钟缓存的问题
    策略：
-   - HTML 导航请求：网络优先（4s 超时回退缓存），保证内容永远最新
+   - 导航请求(HTML)：网络优先（4s 超时回退缓存），保证内容永远最新
    - 同源静态资源：stale-while-revalidate（秒开 + 后台静默更新）
-   - 跨域资源：stale-while-revalidate（字体/天气/看板娘）
+   - 跨域资源：不拦截，交回浏览器原生处理（其缓存头由第三方控制，SW 介入易致异常）
 */
-const VERSION = '2026-11-11-1';
+const VERSION = '2026-11-11-2';
 const CACHE_STATIC = 'dm-static-' + VERSION;
 const CACHE_HTML = 'dm-html-' + VERSION;
-const CACHE_EXT = 'dm-ext-' + VERSION;
 
 const CORE = [
   './',
@@ -44,7 +43,7 @@ async function networkFirst(req) {
   try {
     const fresh = await Promise.race([
       fetch(req),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('sw-timeout')), 4000))
     ]);
     if (fresh && fresh.ok) c.put(req, fresh.clone());
     return fresh;
@@ -55,18 +54,19 @@ async function networkFirst(req) {
   }
 }
 
-async function staleWhileRevalidate(req, cacheName) {
-  const c = await caches.open(cacheName);
+async function staleWhileRevalidate(req) {
+  const c = await caches.open(CACHE_STATIC);
   const cached = await c.match(req);
   const network = fetch(req)
     .then((res) => {
-      if (res && (res.ok || res.type === 'opaque')) c.put(req, res.clone());
+      if (res && res.ok) c.put(req, res.clone());
       return res;
     })
     .catch(() => null);
   if (cached) return cached;
   const res = await network;
-  return res || new Response('', { status: 504, statusText: 'Offline' });
+  if (!res) throw new Error('sw-offline');   // 不做 504 兜底，交回浏览器原生失败
+  return res;
 }
 
 self.addEventListener('fetch', (e) => {
@@ -75,15 +75,13 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
   if (url.pathname.endsWith('/sw.js')) return;
+  // 跨域第三方资源不拦截
+  if (url.origin !== self.location.origin) return;
 
   const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
   if (isHTML) {
     e.respondWith(networkFirst(req));
     return;
   }
-  if (url.origin === self.location.origin) {
-    e.respondWith(staleWhileRevalidate(req, CACHE_STATIC));
-    return;
-  }
-  e.respondWith(staleWhileRevalidate(req, CACHE_EXT));
+  e.respondWith(staleWhileRevalidate(req));
 });
