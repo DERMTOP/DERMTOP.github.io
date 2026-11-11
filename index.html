@@ -3240,6 +3240,15 @@
 
 
     <!-- end 自定义代码 -->
+
+<!-- Service Worker：静态资源本地缓存，规避 GitHub Pages 10 分钟缓存限制 -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
 </body>
 
 </html>
