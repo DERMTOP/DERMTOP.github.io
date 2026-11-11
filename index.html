@@ -3243,12 +3243,18 @@
 
 <!-- Service Worker：静态资源本地缓存，规避 GitHub Pages 10 分钟缓存限制 -->
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
-  });
-}
-</script>
-</body>
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  var started = false;
+  function boot() {
+    if (started) return;
+    started = true;
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })['catch'](function () {});
+  }
+  if (document.readyState !== 'loading') boot();
+  else document.addEventListener('DOMContentLoaded', boot, { once: true });
+  setTimeout(boot, 2500);
+})();
+</script></body>
 
 </html>
